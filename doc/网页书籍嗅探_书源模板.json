@@ -1,0 +1,40 @@
+{
+  "bookSourceUrl": "https://example.com",
+  "bookSourceName": "网页嗅探·自动生成模板",
+  "bookSourceGroup": "嗅探",
+  "bookSourceType": 0,
+  "bookSourceComment": "由内置浏览器嗅探生成的虚拟书源。把 chapterList / content 选择器替换为实际站点结构；动态渲染站点请在 URL 规则加 ,{\"useWebView\":true,\"webJs\":\"...\"} 或填写 ruleContent.webJs 与 ruleContent.sourceRegex。",
+  "enabled": true,
+  "enabledExplore": false,
+  "respondTime": 180000,
+  "header": "{\"User-Agent\":\"Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36\"}",
+  "searchUrl": "https://example.com/search?q={{searchKey}}&page=<1,2,3,4,5>",
+  "ruleSearch": {
+    "bookList": "@css:.book-list li",
+    "name": "a@text",
+    "author": ".author@text",
+    "bookUrl": "a@href",
+    "coverUrl": "img@src"
+  },
+  "ruleBookInfo": {
+    "name": "h1@text",
+    "author": ".info .author@text",
+    "intro": "#intro@html",
+    "coverUrl": ".cover img@src",
+    "tocUrl": "@css:.toc-link@href"
+  },
+  "ruleToc": {
+    "chapterList": "@css:#chapter-list a",
+    "chapterName": "text",
+    "chapterUrl": "href",
+    "nextTocUrl": "@css:a.next@href"
+  },
+  "ruleContent": {
+    "content": "@css:#content@html",
+    "nextContentUrl": "@css:a.next-page@href",
+    "webJs": "",
+    "sourceRegex": "",
+    "replaceRegex": "##<script[\\s\\S]*?</script>##",
+    "imageStyle": "FULL"
+  }
+}
