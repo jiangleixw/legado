@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>网页书籍嗅探 → 加书架 → 续读｜详细实现手册 v1.0</title>
+<style>
+  :root{--bg:#0f1218;--card:#171c25;--card2:#1d2430;--line:#2a3341;--fg:#e6edf6;--dim:#9aa7b8;--acc:#4ea1ff;--ok:#3ecf8e;--warn:#ffb454;--bad:#ff6b6b;--code:#0b0e14}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:36px 26px 80px}
+  header{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:26px}
+  h1{font-size:27px;margin:0 0 10px;letter-spacing:.3px}
+  .sub{color:var(--dim);font-size:13.5px}
+  .pill{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;margin-right:6px;border:1px solid var(--line)}
+  .p-ok{color:var(--ok);border-color:#256b4d;background:#12281f}
+  .p-warn{color:var(--warn);border-color:#7a5a24;background:#2a2113}
+  .p-acc{color:var(--acc);border-color:#2a5a8f;background:#122036}
+  h2{font-size:20px;margin:38px 0 14px;padding-left:12px;border-left:3px solid var(--acc)}
+  h3{font-size:16px;margin:24px 0 10px;color:#cfe0f5}
+  p{margin:10px 0}
+  ul,ol{padding-left:22px;margin:10px 0}
+  li{margin:5px 0}
+  code{background:#232b38;color:#ffd9a0;padding:1px 5px;border-radius:4px;font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:9px;padding:15px 17px;overflow:auto;font:12.8px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;color:#cfe3f8}
+  pre code{background:none;color:inherit;padding:0}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.6px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--card2);color:#cfe0f5;font-weight:600}
+  tr:nth-child(even) td{background:#141922}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin:14px 0}
+  .note{border-left:3px solid var(--warn);background:#241d12;padding:11px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+  .good{border-left:3px solid var(--ok);background:#12251d;padding:11px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+  .bad{border-left:3px solid var(--bad);background:#2a1618;padding:11px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+  .kv{color:var(--dim)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px}
+  .toc{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 22px;columns:2;column-gap:32px}
+  .toc a{color:var(--acc);text-decoration:none;font-size:13.6px;display:block;padding:2px 0;break-inside:avoid}
+  .toc a:hover{text-decoration:underline}
+  .step{display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;background:var(--acc);color:#06121f;border-radius:50%;font-weight:700;font-size:13px;margin-right:8px}
+  footer{margin-top:50px;border-top:1px solid var(--line);padding-top:18px;color:var(--dim);font-size:12.6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>网页书籍嗅探 → 目录分析 → 加入书架 → 断续阅读<br>详细实现手册</h1>
+  <div class="sub">
+    <span class="pill p-acc">v1.0 · 2026-11-12</span>
+    <span class="pill p-ok">基于完整源码 master@330e606 · 2836 文件 SHA1 全校验</span>
+    <span class="pill p-warn">研究/设计文档 · 未改动任何仓库源码</span>
+  </div>
+  <p style="margin-top:14px">目标：不依赖「先找书源」，而是在 App 内置浏览器里<b>直接上网看书</b>，自动嗅探当前网页是不是一本书，分析出目录，一键加入书架，并沿用 App 已有的进度续读能力。本文把每一步拆到<b>文件路径、字段名、HTTP 契约、代码骨架</b>级别，可直接照做。</p>
+</header>
+
+<div class="toc">
+  <a href="#s1">1. 需求拆解与总体结论</a>
+  <a href="#s2">2. 已有基础设施（源码清单）</a>
+  <a href="#s3">3. 端到端数据流</a>
+  <a href="#s4">4. 阶段一：网页嗅探</a>
+  <a href="#s5">5. 阶段二：目录分析</a>
+  <a href="#s6">6. 阶段三：生成虚拟书源</a>
+  <a href="#s7">7. 阶段四：加入书架</a>
+  <a href="#s8">8. 阶段五：断续阅读</a>
+  <a href="#s9">9. 代码骨架（Kotlin）</a>
+  <a href="#s10">10. 三条实现路径与工作量</a>
+  <a href="#s11">11. 风险、边界与合规</a>
+  <a href="#s12">12. 迭代记录与留痕</a>
+</div>
+
+<h2 id="s1">1. 需求拆解与总体结论</h2>
+<table>
+<tr><th>你的需求</th><th>App 现有能力</th><th>是否要改源码</th><th>结论</th></tr>
+<tr><td>直接上网看书</td><td><code>WebViewActivity</code> 内置浏览器、Cookie、菜单栏、<code>addJavascriptInterface</code></td><td>加一个菜单项</td><td><span class="pill p-ok">现成</span></td></tr>
+<tr><td>嗅探网络上的书</td><td><code>BackstageWebView.SnifferWebClient</code>（<code>onLoadResource</code> + <code>sourceRegex</code>）、<code>@webjs:</code>、<code>java.webViewGetSource()</code></td><td>加注入脚本 + 分析器</td><td><span class="pill p-ok">底层已有</span></td></tr>
+<tr><td>目录分析</td><td><code>AnalyzeRule</code> 6 种模式、内置 26 条章节正则、<code>TextFile</code> 切章算法、<code>refreshToc</code></td><td>复用 + 组装</td><td><span class="pill p-ok">现成</span></td></tr>
+<tr><td>加入书架</td><td><code>POST /saveBook</code>（Book JSON → <code>book.save()</code>）、<code>BookType.notShelf</code> 试读</td><td>零改动</td><td><span class="pill p-ok">现成</span></td></tr>
+<tr><td>持续断续阅读</td><td><code>durChapterIndex/durChapterPos</code>、<code>ReadRecord</code>、<code>saveBookProgress</code>、WebDAV 同步</td><td>零改动</td><td><span class="pill p-ok">现成</span></td></tr>
+</table>
+<div class="good"><b>可实现性：4/5（高）。</b>平台能力几乎全部具备，真正要新写的只有「页面 → 书籍」的判定与编排层。<code>api.md</code> 原文甚至写明「先插入书籍以启用缓存，试读后决定不添加请删除书籍」——<b>试读 → 加书架 → 目录正文的闭环在设计上已经存在</b>。难点只在「通用网页结构识别准确率」，不在底层能力。</div>
+
+<h2 id="s2">2. 已有基础设施（源码清单）</h2>
+<table>
+<tr><th>能力</th><th>文件（相对 app/src/main/java/io/legado/app/）</th><th>关键 API / 字段</th></tr>
+<tr><td>内置浏览器</td><td class="mono">ui/browser/WebViewActivity.kt</td><td><code>onCompatCreateOptionsMenu</code>(L194)、<code>addJavascriptInterface</code>(L139/265)、<code>onPageFinished</code>(L525)、<code>shouldOverrideUrlLoading</code>(L496/507/551)</td></tr>
+<tr><td>浏览器 JS 桥</td><td class="mono">help/webView/WebJsExtensions.kt</td><td>把规则引擎/网络能力暴露给页面 JS</td></tr>
+<tr><td>资源嗅探</td><td class="mono">help/http/BackstageWebView.kt</td><td><code>SnifferWebClient.onLoadResource</code>、<code>sourceRegex</code></td></tr>
+<tr><td>规则引擎</td><td class="mono">model/analyzeRule/AnalyzeRule.kt 等 15 文件</td><td><code>Mode.Js/Json/XPath/Regex/WebJs/Default</code>、<code>getElements/getString</code></td></tr>
+<tr><td>URL 规则</td><td class="mono">model/analyzeRule/AnalyzeUrl.kt</td><td><code>,{...}</code> 选项、<code>&lt;1,2,3&gt;</code> 分页、<code>::</code> 分类</td></tr>
+<tr><td>调度链路</td><td class="mono">model/webBook/WebBook.kt</td><td>搜索/详情/目录/正文的协程接口</td></tr>
+<tr><td>书源实体</td><td class="mono">data/entities/BookSource.kt</td><td>38 个字段（见 §6）</td></tr>
+<tr><td>书籍/章节</td><td class="mono">data/entities/Book.kt / BookChapter.kt</td><td><code>origin</code>、<code>durChapterIndex/Pos/Time</code></td></tr>
+<tr><td>Web API</td><td class="mono">api/controller/BookController.kt、api.md</td><td><code>/saveBook</code>、<code>/getChapterList</code>、<code>/getBookContent</code>、<code>/saveBookProgress</code></td></tr>
+<tr><td>目录正则</td><td class="mono">assets/defaultData/txtTocRule.json</td><td>26 条内置章节标题正则</td></tr>
+<tr><td>正文缓存</td><td class="mono">help/book/BookHelp.kt</td><td><code>saveContent/getContent</code></td></tr>
+<tr><td>MCP 工具（可选增强）</td><td class="mono">web/mcp/McpToolServer.kt</td><td>13 个工具：<code>save_source/debug_source/eval_js/check_source/list_sources/get_source/delete_sources/get_http_logs/get_http_log/set_http_log_recording/get_cookies/set_cookie/clear_cookies</code></td></tr>
+</table>
+<p class="kv">数据层：Room <code>version 113</code>、26 个 <code>@Entity</code>、25 个 DAO、62 个 AutoMigration。网络层：OkHttp 5.4.0 + 可选 Cronet 152。构建：Kotlin 2.4.20 / AGP 8.13.2 / Gradle 8.14.4 / JDK 21 / compileSdk 36 / minSdk 23。</p>
+
+<h2 id="s3">3. 端到端数据流</h2>
+<pre><code>用户在内置浏览器打开任意小说网页
+   │
+   ├─[A] onPageFinished / 点菜单「识别为书籍」
+   │      evaluateJavascript(嗅探脚本)  ──► JSON 结果
+   │
+   ├─[B] PageBookSniffer.analyze(json)  → 置信度评分
+   │      ├ pageType = toc      （章节链接 ≥5）
+   │      ├ pageType = content  （正文块 >800 字）
+   │      └ pageType = unknown  → 提示用户 / 转 AI 兜底
+   │
+   ├─[C] 目录分析：章节链接聚类 + 26 条正则 + 序号连续性
+   │      → List&lt;BookChapter&gt;(title, url, index)
+   │
+   ├─[D] SniffedBookBuilder
+   │      ├ 生成虚拟 BookSource（bookSourceUrl = 站点 origin + 路径指纹）
+   │      │   ruleBookInfo / ruleToc / ruleContent 由选择器生成
+   │      ├ 生成 Book（origin 指向虚拟书源，type 带 notShelf 试读位）
+   │      └ 弹窗让用户确认书名/作者/目录（可编辑）
+   │
+   ├─[E] 落库：appDb.bookSourceDao.insert + POST /saveBook
+   │      └ 清除 notShelf 位 → 正式进入书架
+   │
+   └─[F] 阅读：ReadBookActivity 复用既有链路
+          WebBook.getContent → BookHelp.saveContent → 进度写回
+          durChapterIndex/durChapterPos → saveBookProgress → WebDAV 同步</code></pre>
+
+<h2 id="s4">4. 阶段一：网页嗅探（发现「这是一本书」）</h2>
+<h3>4.1 触发点</h3>
+<p>在 <code>WebViewActivity</code> 菜单 <code>R.menu.web_view</code> 增加 <code>menu_sniff_book</code>；同时可在 <code>onPageFinished</code>(L525) 做<b>静默预嗅探</b>（只在结果达标时显示角标，不打扰用户）。注入方式复用现有 <code>evaluateJavascript</code>，无需新增 WebView。</p>
+<pre><code>// WebViewActivity.kt（示意）
+R.id.menu_sniff_book -&gt; {
+    currentWebView.evaluateJavascript(SNIFF_JS) { value -&gt;
+        // evaluateJavascript 返回的是 JSON 字符串再包一层，需两次解析
+        val raw = GSON.fromJsonObject&lt;String&gt;(value).getOrNull() ?: return@evaluateJavascript
+        val result = GSON.fromJsonObject&lt;SniffResult&gt;(raw).getOrNull() ?: return@evaluateJavascript
+        PageBookSniffer.analyze(result)   // → 弹确认窗
+    }
+}</code></pre>
+
+<h3>4.2 嗅探脚本的五个探测器（已交付 <code>网页嗅探_sniff.js</code>）</h3>
+<table>
+<tr><th>#</th><th>探测器</th><th>实现</th><th>产出</th></tr>
+<tr><td>1</td><td>章节候选链接</td><td>遍历 <code>a[href]</code>，用 <code>CHAPTER_RE</code> 匹配「第X章/序章/楔子/番外/尾声…」，<b>仅同源</b>、去当前页、去重，上限 800</td><td><code>chapters[{title,url}]</code></td></tr>
+<tr><td>2</td><td>正文候选</td><td>遍历 <code>div,article,section,main,td</code>，排除 <code>nav/header/footer/aside/script/style</code>；<code>score = 文本长度 / 子元素数 − 链接数×2</code>，取最高分且文本 ≥200 字</td><td><code>contentSelector</code>（CSS 路径）、<code>contentText</code>（≤3000 字）</td></tr>
+<tr><td>3</td><td>翻页/下一章</td><td>优先 <code>a[rel=next]</code>，否则 <code>NEXT_RE</code> 匹配「下一页/下一章/next」</td><td><code>nextUrl</code></td></tr>
+<tr><td>4</td><td>元数据</td><td><code>og:title</code>、<code>description</code>、<code>author</code>、<code>h1</code>、<code>document.title</code></td><td><code>meta{}</code> → 书名/作者候选</td></tr>
+<tr><td>5</td><td>页面类型</td><td><code>chapters ≥ 5 → toc</code>；<code>正文 &gt; 800 字 → content</code>；否则 <code>unknown</code></td><td><code>pageType</code></td></tr>
+</table>
+<div class="note"><b>约束（脚本里已写死）：</b>只读 DOM、不改页面、不发请求。真正的落库、网络请求全部留给 Kotlin 侧，避免页面脚本越权与隐私争议。</div>
+
+<h3>4.3 置信度评分模型（建议）</h3>
+<table>
+<tr><th>信号</th><th>权重</th><th>说明</th></tr>
+<tr><td>章节候选链接数 ≥ 5</td><td>+35</td><td>目录页最强信号</td></tr>
+<tr><td>章节链接 URL 路径同构（同目录、仅尾号递增）</td><td>+20</td><td>如 <code>/book/123/1.html</code> → <code>/2.html</code></td></tr>
+<tr><td>章节序号连续（第1章…第N章 无跳号）</td><td>+15</td><td>中文数字需先归一化</td></tr>
+<tr><td>正文块文本 ≥ 800 字且链接密度低</td><td>+15</td><td>正文页信号</td></tr>
+<tr><td>存在「目录/章节/最新章节/开始阅读」等锚文本</td><td>+8</td><td>站点语义</td></tr>
+<tr><td><code>og:type=book</code> / JSON-LD <code>@type=Book</code> / <code>__NEXT_DATA__</code> 含 chapters</td><td>+7</td><td>结构化数据，命中即高可信</td></tr>
+<tr><td>命中「下一章」且指向同构 URL</td><td>+5</td><td>连载结构</td></tr>
+</table>
+<p><b>阈值建议：</b>≥ 60 直接弹确认窗（预填书名/目录）；40–60 弹「可能是书籍，请确认」；&lt; 40 不提示（可手动强制识别）。评分逻辑放 Kotlin 侧，JS 只负责采集，便于后续调参而不必重新注入。</p>
+
+<h3>4.4 动态渲染 / 反爬站点的处理</h3>
+<ul>
+<li><b>JS 渲染目录：</b>嗅探在 <code>onPageFinished</code> 之后执行，DOM 已就绪；若站点延迟加载，可延时 300–800ms 再注入，或监听 <code>MutationObserver</code> 后回调。</li>
+<li><b>需要 WebView 取源：</b>URL 规则加 <code>,{"useWebView":true,"webJs":"...","sourceRegex":"..."}</code>；<code>AnalyzeUrl</code> 会用 <code>BackstageWebView</code> 渲染后取 HTML，<code>sourceRegex</code> 从网络资源里嗅探真实数据接口。</li>
+<li><b>登录/Cookie：</b>内置浏览器已共享 <code>enabledCookieJar</code> 与 <code>WebCacheManager</code>，嗅探到的书源默认带上当前 Cookie，无需重复登录。</li>
+</ul>
+
+<h2 id="s5">5. 阶段二：目录分析</h2>
+<h3>5.1 三条证据链（互相校验）</h3>
+<ol>
+<li><b>DOM 章节链接</b>：嗅探脚本给出的 <code>chapters[]</code> 是主来源。</li>
+<li><b>内置 26 条章节正则</b>：<code>assets/defaultData/txtTocRule.json</code>，覆盖「目录/目录(去空白)/目录(匹配简介)/数字(纯数字标题)/大写数字/数字混合/数字 分隔符 标题名称/…」。即使页面没有 <code>&lt;a&gt;</code>（纯文本目录），也能用 <code>TextFile</code> 的切章算法切分。</li>
+<li><b>URL 模式 + 序号连续性</b>：对候选 URL 做路径聚类，提取变长数字段；若序号连续递增，则判定为同一本书的章节序列，并可<b>推断缺失章节</b>。</li>
+</ol>
+<h3>5.2 URL 聚类与序号推断（伪代码）</h3>
+<pre><code>groups = chapters.groupBy { url -&gt;
+    url.path.replace(Regex("""\d+"""), "#")      // 形状指纹 /book/123/#.html
+}
+best = groups.maxBy { it.value.size }
+if (best.size &gt;= 5) {
+    nums = best.value.mapNotNull { Regex("""(\d+)""").find(it.url.path)?.value?.toInt() }
+    // 连续 → 生成 BookChapter(index = num - nums.min, url = ...)
+    // 跳号 → 标记缺口，允许 refreshToc 时补齐
+}</code></pre>
+<h3>5.3 分页目录与去噪</h3>
+<ul>
+<li><b>分页目录：</b>把 <code>nextUrl</code> 写入 <code>ruleToc.nextTocUrl</code>，让 <code>WebBook</code> 自动翻页合并（模板里是 <code>@css:a.next@href</code>）。</li>
+<li><b>去噪：</b>剔除「上一页/下一页/返回目录/加入书签/广告/推荐」等锚文本；剔除与正文 URL 不同构的外链；同源约束已在 JS 侧做第一层。</li>
+<li><b>卷/章层级：</b><code>TocRule</code> 有 <code>isVolume</code>、<code>formatJs</code>，可把「第一卷  xxx」识别为卷节点。</li>
+<li><b>兜底：</b>确认弹窗里目录<b>可编辑、可拖拽排序、可删行</b>。识别不准时用户手动修一次，比追求 100% 自动识别更实用。</li>
+</ul>
+
+<h2 id="s6">6. 阶段三：生成虚拟书源</h2>
+<div class="note"><b>为什么必须生成「虚拟书源」？</b>Book 实体用 <code>origin</code> 字段指向 <code>bookSourceUrl</code>，<code>WebBook</code> 靠它取规则去解析目录与正文。直接塞章节列表而不建书源，会导致「目录能显示、正文取不到、刷新目录失效」。因此正确做法是：为这个站点生成一份最小可用的 <code>BookSource</code> 并落库，再让 Book 指向它。</div>
+
+<h3>6.1 BookSource 字段映射（完整 38 字段，★ 为嗅探必填）</h3>
+<table>
+<tr><th>字段</th><th>取值来源</th><th>字段</th><th>取值来源</th></tr>
+<tr><td>★ <code>bookSourceUrl</code></td><td>站点 origin + 路径指纹（唯一键，建议加哈希避免冲突）</td><td><code>bookSourceGroup</code></td><td>固定「嗅探」</td></tr>
+<tr><td>★ <code>bookSourceName</code></td><td>「网页嗅探·{站点域名}」</td><td>★ <code>enabled</code></td><td><code>true</code></td></tr>
+<tr><td>★ <code>bookSourceType</code></td><td><code>0</code>（文本）</td><td><code>enabledExplore</code></td><td><code>false</code></td></tr>
+<tr><td><code>bookSourceComment</code></td><td>生成时间、来源 URL，便于溯源</td><td><code>respondTime</code></td><td><code>180000</code></td></tr>
+<tr><td><code>header</code></td><td>当前 WebView 的 UA（移动端）</td><td><code>enabledCookieJar</code></td><td><code>true</code></td></tr>
+<tr><td><code>searchUrl</code></td><td>可选，站点搜索页（带 <code>{{searchKey}}</code>）</td><td><code>bookUrlPattern</code></td><td>书籍详情页 URL 正则（可选）</td></tr>
+<tr><td>★ <code>ruleBookInfo</code></td><td>由 meta/h1 选择器生成</td><td>★ <code>ruleToc</code></td><td>由章节链接容器生成</td></tr>
+<tr><td>★ <code>ruleContent</code></td><td>由 <code>contentSelector</code> 生成</td><td><code>ruleSearch/ruleExplore/ruleReview</code></td><td>留空</td></tr>
+<tr><td colspan="4" class="kv">其余：<code>bookSourceGroup/customOrder/jsLib/concurrentRate/loginUrl/loginUi/loginCheckJs/coverDecodeJs/variableComment/lastUpdateTime/weight/exploreUrl/exploreScreen/mainJs/eventListener/customButton</code> 保持默认</td></tr>
+</table>
+
+<h3>6.2 三类规则如何由选择器自动生成</h3>
+<p>嗅探脚本返回的 <code>contentSelector</code> 是 CSS 路径（如 <code>#content &gt; div.txt</code>），映射到规则语法：</p>
+<table>
+<tr><th>规则</th><th>字段</th><th>生成值</th></tr>
+<tr><td rowspan="4">ruleToc</td><td><code>chapterList</code></td><td><code>@css:{章节链接共同父选择器} a</code></td></tr>
+<tr><td><code>chapterName</code></td><td><code>text</code></td></tr>
+<tr><td><code>chapterUrl</code></td><td><code>href</code></td></tr>
+<tr><td><code>nextTocUrl</code></td><td><code>@css:a.next@href</code>（由 <code>nextUrl</code> 反推）</td></tr>
+<tr><td rowspan="4">ruleContent</td><td><code>content</code></td><td><code>@css:{contentSelector}@html</code></td></tr>
+<tr><td><code>nextContentUrl</code></td><td><code>@css:a.next-page@href</code> 或由 URL 序号 +1 生成</td></tr>
+<tr><td><code>replaceRegex</code></td><td><code>##&lt;script[\s\S]*?&lt;/script&gt;##</code>（去广告脚本）</td></tr>
+<tr><td><code>webJs / sourceRegex</code></td><td>动态站点才填</td></tr>
+<tr><td rowspan="3">ruleBookInfo</td><td><code>name</code></td><td><code>h1@text</code></td></tr>
+<tr><td><code>author</code></td><td><code>meta[name=author]@content</code> 或用户填写</td></tr>
+<tr><td><code>tocUrl</code></td><td>当前目录页 URL</td></tr>
+</table>
+<p class="kv">规则语法速查：<code>@CSS:</code> / <code>@@</code> / <code>@XPath:</code> / <code>@Json:</code> / <code>$.</code> / <code>@js:</code> / <code>&lt;js&gt;</code> / <code>@webjs:</code> 分派 6 种 Mode；<code>&amp;&amp;</code> <code>||</code> <code>%%</code> 组合；<code>##匹配##替换</code>（<code>###</code> 只替换首个）；<code>@put:{k:v}</code>/<code>@get:{k}</code> 变量；<code>{{JS}}</code>；<code>$1</code> 捕获组；<code>-规则</code> 倒序。已交付的 <code>网页书籍嗅探_书源模板.json</code> 就是这套映射的可编辑样板。</p>
+
+<h2 id="s7">7. 阶段四：加入书架</h2>
+<h3>7.1 接口契约（源码级）</h3>
+<pre><code>// api.md L199
+URL    = http://127.0.0.1:1234/saveBook      // 端口以 App「Web 服务」设置为准
+Method = POST
+BODY   = Book 实体的 JSON 字符串
+
+// BookController.kt L251（实现）
+suspend fun saveBook(postData: String?): ReturnData {
+    GSON.fromJsonObject&lt;Book&gt;(postData).getOrNull()?.let { book -&gt;
+        AppWebDav.uploadBookProgress(book)   // 顺带把进度上传到 WebDAV
+        book.save()                          // 落 Room
+        return ReturnData().setData("")
+    }
+    return ReturnData().setErrorMsg("格式不对")
+}</code></pre>
+<h3>7.2 最小可用载荷</h3>
+<pre><code>{
+  "bookUrl": "https://example.com/book/123/",       // 详情页/目录页 URL，唯一
+  "tocUrl":  "https://example.com/book/123/",
+  "origin":  "https://example.com#sniff-8a3f",      // 必须指向已落库的虚拟书源
+  "originName": "网页嗅探·example.com",
+  "name":   "书名（来自 og:title / h1，可编辑）",
+  "author": "作者（可编辑）",
+  "type":   8,          // BookType.text = 0b1000
+  "group":  0,
+  "coverUrl": "",
+  "intro":  "",
+  "canUpdate": true,
+  "totalChapterNum": 320,
+  "durChapterIndex": 0,
+  "durChapterPos": 0,
+  "durChapterTime": 0,
+  "order": 0
+}</code></pre>
+<h3>7.3 试读 → 正式入架（关键机制）</h3>
+<p><code>BookType.notShelf = 0b100_0000_0000 (1024)</code>，源码注释原文：「<b>未正式加入到书架的临时阅读书籍</b>」。推荐两步走，与 <code>api.md</code> 的「先插入书籍以启用缓存，试读后决定不添加请删除书籍」完全一致：</p>
+<ol>
+<li><b>试读：</b><code>type = text or notShelf</code>（<code>8 | 1024 = 1032</code>）插入 → 缓存与目录立即可用，但书架列表不显示。</li>
+<li><b>确认：</b>用户读几章后点「加入书架」→ 清掉 <code>notShelf</code> 位（<code>type = 8</code>）→ <code>book.update()</code>。</li>
+<li><b>放弃：</b><code>POST /deleteBook</code>（<code>BookController.kt</code> L265 之后）清理试读数据。</li>
+</ol>
+<div class="good"><b>零改动点：</b><code>book.save()</code> / <code>book.update()</code> / <code>book.delete()</code> 都是 <code>Book</code> 实体已有的扩展方法，Room DAO、AutoMigration、书架 UI 全部不用动。也可以不走 HTTP，直接在进程内 <code>appDb.bookDao.insert(...)</code>，更简单（HTTP 是给外部/AI Agent 用的）。</div>
+
+<h2 id="s8">8. 阶段五：断续阅读（完全复用，零改动）</h2>
+<table>
+<tr><th>能力</th><th>字段 / 接口</th><th>说明</th></tr>
+<tr><td>章内位置</td><td><code>durChapterIndex</code>、<code>durChapterPos</code>、<code>durChapterTitle</code>、<code>durChapterTime</code>、<code>durVolumeIndex</code>、<code>chapterInVolumeIndex</code></td><td>翻页/滚动时由 <code>ReadBookActivity</code> 自动写回</td></tr>
+<tr><td>阅读时长统计</td><td><code>ReadRecord</code> 实体</td><td>已有，无需改</td></tr>
+<tr><td>Web 进度同步</td><td><code>POST /saveBookProgress</code>（<code>BookProgress</code> JSON）</td><td><code>BookController.saveBookProgress</code> 按 <code>name+author</code> 找书 → 更新进度 → <code>AppWebDav.uploadBookProgress</code> → <code>book.update()</code> → 若当前正读该书则热更新 <code>ReadBook.webBookProgress</code></td></tr>
+<tr><td>跨设备同步</td><td><code>AppWebDav</code></td><td><code>syncTime</code> + WebDAV，书架/进度/书签全同步</td></tr>
+<tr><td>正文缓存</td><td><code>BookHelp.saveContent/getContent</code></td><td>章节正文落本地缓存，离线续读；<code>ContentRule.contentBatch/maxBatchSize</code> 可批量预取</td></tr>
+<tr><td>目录刷新</td><td><code>refreshToc</code> + <code>nextTocUrl</code></td><td>连载更新时自动补新章节</td></tr>
+</table>
+<pre><code>// 进度载荷（BookProgress.kt）
+{ "name":"书名", "author":"作者",
+  "durChapterIndex":12, "durChapterPos":348,
+  "durChapterTitle":"第13章 归途", "durChapterTime":1762900000000 }</code></pre>
+
+<h2 id="s9">9. 代码骨架（改动清单）</h2>
+<table>
+<tr><th>类型</th><th>文件</th><th>职责</th></tr>
+<tr><td>新增</td><td class="mono">assets/sniff_book.js</td><td>已交付的 <code>网页嗅探_sniff.js</code>，作为 asset 内置</td></tr>
+<tr><td>新增</td><td class="mono">model/sniff/PageBookSniffer.kt</td><td>解析 JSON、置信度评分、页面类型判定</td></tr>
+<tr><td>新增</td><td class="mono">model/sniff/SniffedBookBuilder.kt</td><td>选择器 → BookSource + Book + 章节列表</td></tr>
+<tr><td>新增</td><td class="mono">ui/browser/SniffBookDialog.kt</td><td>确认弹窗：书名/作者/目录可编辑、试读或入架</td></tr>
+<tr><td>修改</td><td class="mono">res/menu/web_view.xml</td><td>+1 个菜单项 <code>menu_sniff_book</code></td></tr>
+<tr><td>修改</td><td class="mono">ui/browser/WebViewActivity.kt</td><td>菜单分支 + <code>onPageFinished</code> 注入（约 30 行）</td></tr>
+<tr><td>可选</td><td class="mono">web/mcp/McpToolServer.kt</td><td>新增 <code>sniff_page</code> 工具，让 AI 兜底长尾站点</td></tr>
+<tr><td class="pill p-ok">不动</td><td colspan="2"><code>Book / BookChapter / BookSource / AnalyzeRule / AnalyzeUrl / WebBook / BookHelp / ReadBookActivity / BookController / AppDatabase</code> 全部不改</td></tr>
+</table>
+<pre><code>// PageBookSniffer.kt（骨架）
+object PageBookSniffer {
+    fun analyze(r: SniffResult): SniffCandidate? {
+        var score = 0
+        if (r.chapters.size &gt;= 5) score += 35
+        val shape = r.chapters.groupBy { it.url.path.replace(Regex("""\d+"""), "#") }
+                              .maxByOrNull { it.value.size }
+        if ((shape?.value?.size ?: 0) &gt;= 3) score += 20
+        if (isSerialContinuous(r.chapters)) score += 15
+        if (r.contentText.length &gt; 800) score += 15
+        if (score &lt; 40) return null
+        return SniffCandidate(
+            title   = r.meta.ogTitle.ifBlank { r.meta.h1.ifBlank { r.title } },
+            author  = r.meta.author,
+            chapters= mergeWithBuiltinTocRules(r.chapters, r.contentText), // 26 条正则兜底
+            tocSelector   = commonParentSelector(r.chapters),
+            contentSelector = r.contentSelector,
+            nextUrl = r.nextUrl,
+            confidence = score
+        )
+    }
+}
+
+// SniffedBookBuilder.kt（骨架）
+suspend fun build(c: SniffCandidate, site: String): Pair&lt;BookSource, Book&gt; {
+    val srcUrl = "$site#sniff-" + c.title.hashCode().toString(16)
+    val source = BookSource(
+        bookSourceUrl = srcUrl,
+        bookSourceName = "网页嗅探·" + site.toUri().host,
+        bookSourceGroup = "嗅探", bookSourceType = 0, enabled = true,
+        ruleToc = TocRule(
+            chapterList = "@css:${c.tocSelector} a", chapterName = "text",
+            chapterUrl = "href", nextTocUrl = "@css:a.next@href"),
+        ruleContent = ContentRule(
+            content = "@css:${c.contentSelector}@html",
+            replaceRegex = "##&lt;script[\\s\\S]*?&lt;/script&gt;##")
+    )
+    appDb.bookSourceDao.insert(source)
+    val book = Book(
+        bookUrl = c.tocUrl.ifBlank { c.url }, tocUrl = c.tocUrl,
+        origin = srcUrl, originName = source.bookSourceName,
+        name = c.title, author = c.author,
+        type = BookType.text or BookType.notShelf,   // 先试读
+        totalChapterNum = c.chapters.size, canUpdate = true
+    )
+    book.save()                       // 或 POST /saveBook
+    appDb.bookChapterDao.insert(*c.chapters.toTypedArray())
+    return source to book
+}</code></pre>
+
+<h2 id="s10">10. 三条实现路径与工作量</h2>
+<table>
+<tr><th>路径</th><th>做法</th><th>改动量</th><th>适用</th><th>评级</th></tr>
+<tr><td><b>A 零改动</b></td><td>纯用订阅源（<code>RssSource.ruleArticles/ruleContent/injectJs/shouldOverrideUrlLoading</code>）+ 手写规则，URL 拦截 JS 里调「阅读搜索 / 添加书架」</td><td>0 行代码，每站点写规则</td><td>验证思路、固定几个站点</td><td><span class="pill p-warn">2/5</span></td></tr>
+<tr><td><b>B 轻量集成（推荐）</b></td><td>本文 §9 清单：内置浏览器加「识别为书籍」+ 注入嗅探 JS + 生成虚拟书源 + 落库入架</td><td>1 个 JS + 3 个 Kotlin + 1 弹窗 + 菜单/Activity 约 30 行</td><td>通用网页、要真正「上网看书」</td><td><span class="pill p-ok">4/5</span></td></tr>
+<tr><td><b>C AI/MCP 增强</b></td><td>在 B 之上新增 <code>sniff_page</code> MCP 工具；识别失败时把 DOM 摘要交给模型生成规则（现有 13 个工具已含 <code>eval_js/debug_source/check_source</code>）</td><td>+1 工具 + 提示词</td><td>长尾站点、结构千奇百怪</td><td><span class="pill p-acc">4.5/5</span></td></tr>
+</table>
+<p><b>MVP 工作量：</b>约 <b>1–2 人周</b>（B 路径）。其中 60% 精力在「通用网页结构识别准确率」与确认弹窗交互，而非平台改造。</p>
+
+<h2 id="s11">11. 风险、边界与合规</h2>
+<table>
+<tr><th>风险</th><th>缓解</th></tr>
+<tr><td>站点结构差异大，自动识别误判</td><td>置信度阈值 + 26 条内置正则 + URL 聚类 + 序号连续性 + <b>目录可编辑</b> + AI 兜底（路径 C）</td></tr>
+<tr><td>动态渲染 / 接口取数</td><td><code>useWebView + webJs + sourceRegex</code>、<code>BackstageWebView</code> 取渲染后 DOM</td></tr>
+<tr><td>章节 URL 时效 / 连载更新</td><td><code>refreshToc</code> + <code>nextTocUrl</code> 自动补章；<code>bookUrlPattern</code> 限定范围</td></tr>
+<tr><td>同名书源冲突</td><td><code>bookSourceUrl</code> 带站点 + 路径指纹哈希；入库前查重</td></tr>
+<tr><td>付费/登录墙、反爬</td><td>只复现浏览器已能正常看到的内容，<b>不绕过</b>付费、不破解加密、不高频抓取</td></tr>
+<tr><td>版权合规</td><td><b>仅限个人合法阅读与本地缓存</b>；不提供批量下载、不分发内容、不内置任何站点书源。GPL-3.0 衍生工程需注意相应的开源义务</td></tr>
+<tr><td>隐私</td><td>嗅探脚本只读 DOM、不发请求；不上传浏览历史；进度同步走用户自配 WebDAV</td></tr>
+</table>
+<div class="bad"><b>越界提醒：</b>本方案是「把用户自己正在浏览的网页，整理成 App 内的阅读条目」，属于阅读器体验增强。任何「批量爬取全网小说、绕过付费、去除版权声明」的用法都不在方案范围内，也不建议实施。</div>
+
+<h2 id="s12">12. 迭代记录与留痕</h2>
+<table>
+<tr><th>版本</th><th>日期</th><th>内容</th></tr>
+<tr><td>v1 仓库分析</td><td>2026-11-12</td><td>《legado_仓库分析报告.html》：源码结构、打包可行性、版本核查（源码包被截断，数字有偏差）</td></tr>
+<tr><td>v2 完整源码</td><td>2026-11-12</td><td>下载完整源码 <code>master@330e606</code>，2836 文件 Git blob SHA1 逐文件校验 100% 通过；修正 v1 的 Cronet/规模数字</td></tr>
+<tr><td>v3 规则研究</td><td>2026-11-12</td><td>《legado_书源规则与上网看书方案研究.html》+ 嗅探 JS + 书源模板：书源/订阅源语法全表、上网看书方案</td></tr>
+<tr><td><b>v1.0 本手册</b></td><td><b>2026-11-12</b></td><td>把「嗅探 → 目录分析 → 虚拟书源 → 加书架 → 续读」拆到字段/契约/代码骨架级；配套三文件已上传至仓库 <code>doc/</code></td></tr>
+</table>
+<p class="kv">数据来源：本地完整源码 <code>/workspace/legado-src</code>、仓库自带 <code>api.md</code>、<code>BookController.kt</code>、<code>Book.kt</code>/<code>BookSource.kt</code>/<code>BookType.kt</code>、<code>txtTocRule.json</code>、GitHub REST API。<b>本轮未改动仓库任何源码文件，未执行构建/打包，未下载或查询 APK。</b></p>
+
+<footer>网页书籍嗅探 · 加书架 · 续读｜详细实现手册 v1.0 · 基于 jiangleixw/legado master@330e606 完整源码</footer>
+</div>
+</body>
+</html>
